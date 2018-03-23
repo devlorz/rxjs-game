@@ -12,27 +12,61 @@ const reset$ = Observable.fromEvent(resetButton, "click");
 const half$ = Observable.fromEvent(halfButton, "click");
 const quarter$ = Observable.fromEvent(quarterButton, "click");
 
+const input = document.querySelector("#input");
+const input$ = Observable.fromEvent(input, "input").map(
+  event => event.target.value
+);
+
 const data = { count: 0 };
 const inc = acc => ({ count: acc.count + 1 });
 const reset = acc => data;
 
-const interval$ = Observable.interval(1000);
-const intervalThatStop$ = interval$.takeUntil(stop$);
+const starters$ = Observable.merge(
+  start$.mapTo(1000),
+  half$.mapTo(500),
+  quarter$.mapTo(250)
+).share();
 
-const incOrReset$ = Observable.merge(
-  intervalThatStop$.mapTo(inc),
-  reset$.mapTo(reset)
-);
+const intervalActions = time =>
+  Observable.merge(
+    Observable.interval(time)
+      .takeUntil(stop$)
+      .mapTo(inc),
+    reset$.mapTo(reset)
+  );
 
-Observable.merge(start$.mapTo(1000), half$.mapTo(500), quarter$.mapTo(250))
-  .switchMap(time =>
-    Observable.merge(
-      Observable.interval(time)
-        .takeUntil(stop$)
-        .mapTo(inc),
-      reset$.mapTo(reset)
-    )
-  )
+const timer$ = starters$
+  .switchMap(intervalActions)
   .startWith(data)
-  .scan((acc, cur) => cur(acc))
-  .subscribe(x => console.log(x));
+  .scan((acc, curr) => curr(acc));
+
+const runningGame$ = timer$
+  .do(x => console.log(x))
+  .takeWhile(data => data.count <= 3)
+
+  .withLatestFrom(input$.do(x => console.log(x)), (timer, input) => ({
+    count: timer.count,
+    text: input
+  }))
+  .share();
+
+starters$.subscribe(() => {
+  input.focus();
+  document.querySelector("#score").innerHTML = ``;
+  input.value = "";
+});
+
+runningGame$.repeat().subscribe(() => (input.value = ""));
+
+runningGame$
+  .filter(data => data.count === parseInt(data.text))
+  .reduce((acc, curr) => acc + 1, 0)
+  .repeat()
+  .subscribe(
+    x =>
+      (document.querySelector("#score").innerHTML = `
+            ${x}
+        `),
+    err => console.log(err),
+    () => console.log("complete")
+  );
